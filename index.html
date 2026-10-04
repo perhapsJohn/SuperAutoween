@@ -133,13 +133,44 @@ body {
 		window.AudioContext = Wrapped;
 		if (window.webkitAudioContext) { window.webkitAudioContext = Wrapped; }
 	}
-	const unlock = () => ctxs.forEach((c) => { if (c.state !== 'running' && c.state !== 'closed') { c.resume(); } });
-	['pointerdown', 'pointerup', 'touchend', 'keydown', 'click'].forEach((e) => document.addEventListener(e, unlock, true));
+	// iPhone: the ringer switch mutes Web Audio unless the page's audio session
+	// is "playback" (Safari 17+); older iOS needs an <audio> element playing,
+	// started from a tap, for the same effect.
+	try { if (navigator.audioSession) { navigator.audioSession.type = 'playback'; } } catch (e) { /* not iOS */ }
+	let silent = null;
+	const keepSession = () => {
+		if (silent || navigator.audioSession) { return; }
+		silent = new Audio('data:audio/wav;base64,UklGRiUAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQEAAACA');
+		silent.loop = true;
+		silent.setAttribute('playsinline', '');
+		silent.play().catch(() => { silent = null; });
+	};
+	// Every tap / click / key: resume any suspended (or iOS "interrupted", after a
+	// call or app switch) context, and push one silent sample through it, which
+	// older iOS needs before it really starts. Must run inside the gesture.
+	const unlock = () => {
+		keepSession();
+		ctxs.forEach((c) => {
+			if (c.state === 'running' || c.state === 'closed') { return; }
+			c.resume();
+			try {
+				const b = c.createBufferSource();
+				b.buffer = c.createBuffer(1, 1, 22050);
+				b.connect(c.destination);
+				b.start(0);
+			} catch (e) { /* context not ready yet */ }
+		});
+	};
+	['pointerdown', 'pointerup', 'touchstart', 'touchend', 'keydown', 'click'].forEach((e) => document.addEventListener(e, unlock, true));
+	document.addEventListener('visibilitychange', () => {
+		if (!document.hidden) { ctxs.forEach((c) => { if (c.state !== 'running' && c.state !== 'closed') { c.resume().catch(() => {}); } }); }
+	});
+	window.__audio = ctxs;   // debugging: window.__audio.map((c) => c.state)
 }());
 		</script>
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":30316216,"index.wasm":37686550,"index.mobile.pck":16097680},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":30316216,"index.wasm":37686550,"index.mobile.pck":16097648},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 

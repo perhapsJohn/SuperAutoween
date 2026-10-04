@@ -49,6 +49,23 @@ body {
 	touch-action: manipulation;
 }
 
+#audio-beeps {
+	position: fixed;
+	left: 8px;
+	top: 26px;
+	z-index: 21;
+	display: flex;
+	gap: 6px;
+}
+#audio-beeps button {
+	padding: 8px 10px;
+	font: 600 14px/1 system-ui, -apple-system, sans-serif;
+	border-radius: 8px;
+	border: 1px solid #9f9;
+	background: rgba(0, 0, 0, 0.8);
+	color: #9f9;
+}
+
 #audio-debug {
 	position: fixed;
 	left: 0;
@@ -213,10 +230,50 @@ body {
 		}
 		chip.style.display = blocked() ? 'block' : 'none';
 		if (debug) {
-			if (!line) { line = document.createElement('div'); line.id = 'audio-debug'; document.body.appendChild(line); }
+			if (!line) {
+				line = document.createElement('div');
+				line.id = 'audio-debug';
+				document.body.appendChild(line);
+				// test beeps that skip the game: A through the game's own context,
+				// B through a brand new context, C as a plain <audio> element
+				const bar = document.createElement('div');
+				bar.id = 'audio-beeps';
+				const beep = (c) => {
+					const o = c.createOscillator();
+					const g = c.createGain();
+					o.frequency.value = 660;
+					g.gain.value = 0.25;
+					o.connect(g);
+					g.connect(c.destination);
+					o.start();
+					o.stop(c.currentTime + 0.4);
+				};
+				const btn = (label, fn) => {
+					const b = document.createElement('button');
+					b.textContent = label;
+					b.addEventListener('click', (e) => { e.stopPropagation(); try { fn(); } catch (err) { b.textContent = label + ' (' + err.name + ')'; } });
+					bar.appendChild(b);
+				};
+				btn('Beep A (game)', () => { const c = ctxs[0]; c.resume(); beep(c); });
+				btn('Beep B (new)', () => { const c = new (window.webkitAudioContext && !window.AudioContext ? window.webkitAudioContext : window.AudioContext)(); c.resume(); beep(c); });
+				btn('Beep C (<audio>)', () => {
+					const rate = 8000;
+					const n = rate * 0.4;
+					const buf = new Uint8Array(44 + n);
+					const dv = new DataView(buf.buffer);
+					const w = (o, str) => { for (let i = 0; i < str.length; i++) { buf[o + i] = str.charCodeAt(i); } };
+					w(0, 'RIFF'); dv.setUint32(4, 36 + n, true); w(8, 'WAVEfmt '); dv.setUint32(16, 16, true);
+					dv.setUint16(20, 1, true); dv.setUint16(22, 1, true); dv.setUint32(24, rate, true); dv.setUint32(28, rate, true);
+					dv.setUint16(32, 1, true); dv.setUint16(34, 8, true); w(36, 'data'); dv.setUint32(40, n, true);
+					for (let i = 0; i < n; i++) { buf[44 + i] = 128 + Math.round(60 * Math.sin(2 * Math.PI * 660 * i / rate)); }
+					new Audio(URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }))).play();
+				});
+				document.body.appendChild(bar);
+			}
 			line.textContent = 'audio: ' + (ctxs.map((c) => c.state + ' ' + c.sampleRate + 'Hz t=' + c.currentTime.toFixed(1)).join(', ') || 'no context')
 				+ ' | session: ' + (navigator.audioSession ? navigator.audioSession.type : 'n/a')
 				+ ' | silent el: ' + (silent ? (silent.paused ? 'paused' : 'playing') : 'none')
+				+ ' | mode: ' + (new URLSearchParams(location.search).get('audiomode') || 'default')
 				+ ' | touch ' + navigator.maxTouchPoints + ' | ' + (window.parent !== window ? 'in frame' : 'top');
 		}
 	};
@@ -228,7 +285,7 @@ body {
 		</script>
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":30316216,"index.wasm":37686550,"index.mobile.pck":16097680},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":30316888,"index.wasm":37686550,"index.mobile.pck":16098320},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
